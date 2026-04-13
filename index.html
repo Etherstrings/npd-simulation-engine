@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NPD 对抗模拟引擎 — 临床研究工具</title>
+  <meta name="description" content="基于 NARC 框架的自恋型人格障碍对抗模拟引擎，用于生成临床级别的互动案例数据。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>⚙️ API 设置</h2>
+          <button id="close-settings" class="btn-icon">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="api-provider">LLM 提供商</label>
+            <select id="api-provider">
+              <option value="openai">OpenAI (GPT-4o)</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="claude">Anthropic Claude</option>
+              <option value="custom">自定义 OpenAI 兼容</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="api-key">API Key</label>
+            <input type="password" id="api-key" placeholder="输入你的 API Key..." />
+          </div>
+          <div class="form-group" id="custom-url-group" style="display:none">
+            <label for="api-url">自定义 API URL</label>
+            <input type="text" id="api-url" placeholder="https://api.example.com/v1" />
+          </div>
+          <div class="form-group" id="custom-model-group" style="display:none">
+            <label for="api-model">模型名称</label>
+            <input type="text" id="api-model" placeholder="gpt-4o" />
+          </div>
+          <button id="save-settings" class="btn btn-primary">保存设置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header id="app-header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">🧠</span>
+          <h1>NPD 对抗模拟引擎</h1>
+        </div>
+        <span class="badge">NARC Framework v1.0</span>
+      </div>
+      <div class="header-right">
+        <button id="btn-settings" class="btn btn-ghost">⚙️ API 设置</button>
+        <button id="btn-export" class="btn btn-ghost" disabled>📊 导出数据</button>
+        <button id="btn-new" class="btn btn-accent">+ 新模拟</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content">
+      <!-- View: Setup -->
+      <section id="view-setup" class="view active">
+        <div class="setup-container">
+          <div class="setup-header">
+            <h2>配置模拟场景</h2>
+            <p class="subtitle">设定两个 Agent 的心理画像和冲突场景，启动对抗模拟。</p>
+          </div>
+
+          <!-- Scenario Selection -->
+          <div class="setup-section">
+            <h3>📋 冲突场景</h3>
+            <div class="scenario-grid" id="scenario-grid">
+              <!-- Populated by JS -->
+            </div>
+            <div class="form-group" style="margin-top:1rem">
+              <label for="custom-scenario">自定义场景描述</label>
+              <textarea id="custom-scenario" rows="3" placeholder="描述冲突情境的背景、地点、起因..."></textarea>
+            </div>
+          </div>
+
+          <!-- Agent Profiles -->
+          <div class="setup-agents">
+            <!-- Agent A: NPD -->
+            <div class="agent-setup" id="agent-a-setup">
+              <div class="agent-setup-header npd">
+                <span class="agent-icon">🎭</span>
+                <h3>Agent A — NPD 自恋者</h3>
+              </div>
+              <div class="agent-setup-body">
+                <div class="form-group">
+                  <label>角色名</label>
+                  <input type="text" id="agent-a-name" value="Victor" />
+                </div>
+                <div class="form-group">
+                  <label>角色背景</label>
+                  <textarea id="agent-a-background" rows="2" placeholder="描述角色的身份、职业、社会地位...">成功企业家，习惯控制一切，极度自信，认为自己是行业最顶尖的人才。</textarea>
+                </div>
+                <div class="form-group">
+                  <label>核心伤口 (Core Wound)</label>
+                  <input type="text" id="agent-a-wound" value="内心深处觉得自己是个冒牌货，害怕被揭穿真实的平庸" />
+                </div>
+                <div class="slider-group">
+                  <div class="slider-item">
+                    <label>夸大性 <span id="v-grandiosity">85</span></label>
+                    <input type="range" id="agent-a-grandiosity" min="0" max="100" value="85" />
+                  </div>
+                  <div class="slider-item">
+                    <label>脆弱性 <span id="v-vulnerability">70</span></label>
+                    <input type="range" id="agent-a-vulnerability" min="0" max="100" value="70" />
+                  </div>
+                  <div class="slider-item">
+                    <label>赞赏需求 <span id="v-admiration">90</span></label>
+                    <input type="range" id="agent-a-admiration" min="0" max="100" value="90" />
+                  </div>
+                  <div class="slider-item">
+                    <label>竞争/贬低 <span id="v-rivalry">80</span></label>
+                    <input type="range" id="agent-a-rivalry" min="0" max="100" value="80" />
+                  </div>
+                  <div class="slider-item">
+                    <label>共情缺损 <span id="v-empathy">90</span></label>
+                    <input type="range" id="agent-a-empathy" min="0" max="100" value="90" />
+                  </div>
+                  <div class="slider-item">
+                    <label>暴怒阈值 <span id="v-rage">40</span></label>
+                    <input type="range" id="agent-a-rage" min="0" max="100" value="40" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>NPD 亚型</label>
+                  <select id="agent-a-subtype">
+                    <option value="grandiose">夸大型 (Grandiose)</option>
+                    <option value="vulnerable">脆弱型 (Vulnerable)</option>
+                    <option value="mixed">混合型 (Mixed)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="vs-divider">
+              <span>⚔️</span>
+              <span>VS</span>
+            </div>
+
+            <!-- Agent B: Counter -->
+            <div class="agent-setup" id="agent-b-setup">
+              <div class="agent-setup-header counter">
+                <span class="agent-icon">🎯</span>
+                <h3>Agent B — Counter-Agent 对抗者</h3>
+              </div>
+              <div class="agent-setup-body">
+                <div class="form-group">
+                  <label>角色名</label>
+                  <input type="text" id="agent-b-name" value="Diana" />
+                </div>
+                <div class="form-group">
+                  <label>角色背景</label>
+                  <textarea id="agent-b-background" rows="2" placeholder="描述角色的身份和与 NPD 的关系...">曾被 Victor 长期操控的前合伙人，现已看透他的一切伎俩，决意彻底反击。</textarea>
+                </div>
+                <div class="form-group">
+                  <label>对抗风格</label>
+                  <select id="agent-b-style">
+                    <option value="surgical">精准外科手术式 — 冷静、精确瞄准弱点</option>
+                    <option value="mirror">镜像回击式 — 用对方的逻辑反噬</option>
+                    <option value="escalation">升级对抗式 — 对等或升级辱骂/攻击</option>
+                    <option value="exposure">公开揭穿式 — 在场景中当众暴露</option>
+                    <option value="hybrid">混合式 — 综合所有策略</option>
+                  </select>
+                </div>
+                <div class="slider-group">
+                  <div class="slider-item">
+                    <label>攻击强度 <span id="v-attack">75</span></label>
+                    <input type="range" id="agent-b-attack" min="0" max="100" value="75" />
+                  </div>
+                  <div class="slider-item">
+                    <label>升级意愿 <span id="v-escalation">80</span></label>
+                    <input type="range" id="agent-b-escalation" min="0" max="100" value="80" />
+                  </div>
+                  <div class="slider-item">
+                    <label>心理洞察力 <span id="v-insight">90</span></label>
+                    <input type="range" id="agent-b-insight" min="0" max="100" value="90" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Simulation Settings -->
+          <div class="setup-section">
+            <h3>🔧 模拟参数</h3>
+            <div class="params-grid">
+              <div class="form-group">
+                <label for="max-rounds">对话回合数</label>
+                <input type="number" id="max-rounds" value="15" min="5" max="50" />
+              </div>
+              <div class="form-group">
+                <label for="escalation-rate">升级速度</label>
+                <select id="escalation-rate">
+                  <option value="slow">缓慢 — 渐进式升级</option>
+                  <option value="medium" selected>中等 — 自然升级</option>
+                  <option value="fast">快速 — 激烈升级</option>
+                  <option value="explosive">爆发式 — 快速进入高强度</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="language">对话语言</label>
+                <select id="language">
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                  <option value="mixed">中英混合</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-start" class="btn btn-primary btn-large">🚀 启动模拟</button>
+        </div>
+      </section>
+
+      <!-- View: Simulation -->
+      <section id="view-simulation" class="view hidden">
+        <div class="sim-layout">
+          <!-- Left: Agent A State -->
+          <aside class="state-panel" id="state-panel-a">
+            <div class="state-header npd">
+              <span class="agent-icon-sm">🎭</span>
+              <h4 id="state-a-name">Victor</h4>
+              <span class="tag tag-npd">NPD</span>
+            </div>
+            <div class="state-bars" id="state-bars-a">
+              <!-- Populated by JS -->
+            </div>
+            <div class="state-defense" id="state-defense-a">
+              <h5>激活的防御机制</h5>
+              <div class="defense-tags" id="defense-tags-a"></div>
+            </div>
+            <div class="state-status" id="state-status-a">
+              <span class="status-label">状态</span>
+              <span class="status-value" id="status-value-a">稳定</span>
+            </div>
+          </aside>
+
+          <!-- Center: Dialogue -->
+          <div class="dialogue-panel" id="dialogue-panel">
+            <div class="dialogue-header">
+              <div class="round-indicator">
+                回合 <span id="current-round">0</span> / <span id="total-rounds">15</span>
+              </div>
+              <div class="sim-controls">
+                <button id="btn-pause" class="btn btn-sm btn-ghost" disabled>⏸️ 暂停</button>
+                <button id="btn-step" class="btn btn-sm btn-ghost" disabled>⏭️ 下一步</button>
+                <button id="btn-stop" class="btn btn-sm btn-danger" disabled>⏹️ 终止</button>
+              </div>
+            </div>
+            <div class="dialogue-messages" id="dialogue-messages">
+              <div class="dialogue-empty">
+                <p>模拟尚未开始</p>
+              </div>
+            </div>
+            <div class="dialogue-footer">
+              <div class="escalation-meter">
+                <span>冲突强度</span>
+                <div class="meter-bar">
+                  <div class="meter-fill" id="escalation-fill" style="width: 0%"></div>
+                </div>
+                <span id="escalation-value">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Agent B State -->
+          <aside class="state-panel" id="state-panel-b">
+            <div class="state-header counter">
+              <span class="agent-icon-sm">🎯</span>
+              <h4 id="state-b-name">Diana</h4>
+              <span class="tag tag-counter">Counter</span>
+            </div>
+            <div class="state-bars" id="state-bars-b">
+              <!-- Populated by JS -->
+            </div>
+            <div class="state-attack" id="state-attack-b">
+              <h5>使用的攻击策略</h5>
+              <div class="attack-tags" id="attack-tags-b"></div>
+            </div>
+            <div class="state-status" id="state-status-b">
+              <span class="status-label">状态</span>
+              <span class="status-value" id="status-value-b">就绪</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- View: Analysis -->
+      <section id="view-analysis" class="view hidden">
+        <div class="analysis-container">
+          <h2>📊 模拟分析报告</h2>
+          <div class="analysis-grid">
+            <div class="analysis-card" id="analysis-summary">
+              <h3>总结</h3>
+              <div id="analysis-summary-content"></div>
+            </div>
+            <div class="analysis-card" id="analysis-patterns">
+              <h3>攻击模式统计</h3>
+              <div id="analysis-patterns-content"></div>
+            </div>
+            <div class="analysis-card" id="analysis-timeline">
+              <h3>心理状态时间线</h3>
+              <canvas id="state-chart" width="800" height="300"></canvas>
+            </div>
+            <div class="analysis-card" id="analysis-breakdown">
+              <h3>破防分析</h3>
+              <div id="analysis-breakdown-content"></div>
+            </div>
+          </div>
+          <div class="export-actions">
+            <button id="btn-export-json" class="btn btn-primary">📄 导出 JSON</button>
+            <button id="btn-export-csv" class="btn btn-secondary">📊 导出 CSV</button>
+            <button id="btn-export-full" class="btn btn-secondary">📋 导出完整报告</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
