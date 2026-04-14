@@ -341,12 +341,24 @@ function initRadar() {
       const history = [{ role: 'user', content: text }];
       const resultRaw = await callLLM(prompt, history);
       
-      let jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0] || '[]';
+      let jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0];
+      if (!jsonStr) {
+        // Fallback: try parsing the whole thing if it's already a valid array without extra spaces
+        jsonStr = resultRaw;
+      }
+      
       let scannedUsers = [];
       try {
         scannedUsers = JSON.parse(jsonStr);
       } catch (e) {
-        throw new Error('解析失败。LLM 没有返回标准的 JSON 数组。');
+        // Second fallback: Maybe the LLM returned markdown codeblocks?
+        try {
+          const stripped = resultRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+          const match = stripped.match(/\[[\s\S]*\]/);
+          scannedUsers = JSON.parse(match ? match[0] : stripped);
+        } catch (e2) {
+          throw new Error('解析失败。大模型没有严格通过 JSON 数组返回结果。内容: ' + resultRaw.substring(0, 50));
+        }
       }
       
       document.getElementById('radar-status').textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
@@ -379,7 +391,10 @@ function renderRadarResults(users) {
           <h3 style="color: #ff3366; margin: 0 0 0.5rem 0;">🎯 锁定目标: ${escapeHTML(u.username)}</h3>
           <span class="tag tag-npd">${escapeHTML(u.disorder_type)}</span>
         </div>
-        <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="${index}">🔪 生成致命锐评</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm btn-secondary btn-import-sim" data-idx="${index}">⚔️ 导入主推演引擎</button>
+          <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="${index}">🔪 生成致命锐评</button>
+        </div>
       </div>
       <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 6px; border-left: 3px solid #ff3366;">
         <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.3rem;">典型症状原话:</div>
@@ -423,6 +438,39 @@ function renderRadarResults(users) {
         generateBtn.disabled = false;
         generateBtn.textContent = '🔪 刷新致命锐评';
       }
+    });
+
+    const importBtn = card.querySelector('.btn-import-sim');
+    importBtn.addEventListener('click', () => {
+      // 1. Switch back to setup panel by simulating a click
+      document.querySelector('[data-view="view-setup"]').click();
+      
+      // 2. Override all setup variables with the extracted user
+      document.getElementById('agent-a-name').value = u.username;
+      
+      const basicBg = document.getElementById('agent-a-background');
+      if (basicBg) {
+        basicBg.value = `系统雷达拦截的目标：${u.disorder_type}的疑似患者。
+曾在群组中发布具有毒性特征的言论："${u.evidence}"`;
+      }
+      
+      document.getElementById('agent-a-wound').value = u.core_wound_guess;
+      
+      // Auto-set the character stats to an extremely aggressive "toxic" profile since they were caught.
+      document.getElementById('agent-a-grandiosity').value = 95;
+      document.getElementById('agent-a-vulnerability').value = 90;
+      document.getElementById('agent-a-admiration').value = 85;
+      document.getElementById('agent-a-rivalry').value = 95;
+      document.getElementById('agent-a-empathy').value = 5;
+      document.getElementById('agent-a-rage').value = 15;
+      
+      // Trigger update hooks
+      ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(trait => {
+        const el = document.getElementById(`agent-a-${trait}`);
+        if(el) el.dispatchEvent(new Event('input'));
+      });
+      
+      alert(`已成功将【${u.username}】作为核心反派引入“NPD 核心对抗引擎”。你可以调整下方的对抗强度，并点击[启动模拟]亲自下场对线！`);
     });
     
     copyBtn.addEventListener('click', () => {
