@@ -243,11 +243,129 @@ function initButtons() {
 }
 
 // ============================================
+// Target Pool Storage (localStorage)
+// ============================================
+const POOL_STORAGE_KEY = 'npd_targets_pool';
+
+function getTargetPool() {
+  const data = localStorage.getItem(POOL_STORAGE_KEY);
+  return data ? JSON.parse(data) : {};
+}
+
+function saveToTargetPool(groupName, users) {
+  if (!users || users.length === 0) return;
+  const pool = getTargetPool();
+  const safeGroupName = groupName.trim() || '未命名来源';
+  
+  // Merge or create group
+  if (!pool[safeGroupName]) {
+    pool[safeGroupName] = [];
+  }
+  
+  // Append users to group, avoid duplicates by checking username
+  users.forEach(newUser => {
+    const exists = pool[safeGroupName].some(u => u.username === newUser.username);
+    if(!exists) {
+      pool[safeGroupName].unshift(newUser); // Add to front
+    }
+  });
+
+  localStorage.setItem(POOL_STORAGE_KEY, JSON.stringify(pool));
+  renderTargetPool();
+}
+
+function renderTargetPool() {
+  const poolContainer = document.getElementById('target-pool-results');
+  if(!poolContainer) return;
+  
+  const pool = getTargetPool();
+  poolContainer.innerHTML = '';
+  
+  const groups = Object.keys(pool);
+  if (groups.length === 0) {
+    poolContainer.innerHTML = '<div style="color: #666; font-size: 0.9rem; font-style: italic;">档案库空空如也。请在上方输入群组进行提取，截获的患者将被永久钉在这里。</div>';
+    return;
+  }
+  
+  groups.forEach(groupName => {
+    const users = pool[groupName];
+    if (users.length === 0) return;
+    
+    // Create Group Header
+    const groupBlock = document.createElement('div');
+    groupBlock.style.cssText = 'background: #151522; border: 1px solid #333; border-radius: 8px; overflow: hidden;';
+    
+    const groupHeader = document.createElement('div');
+    groupHeader.style.cssText = 'background: rgba(255,51,102,0.1); padding: 0.8rem 1rem; border-bottom: 1px solid #333; font-weight: bold; color: #ff3366; display: flex; align-items: center; gap: 0.5rem;';
+    groupHeader.innerHTML = `<span>📁 来源：${escapeHTML(groupName)}</span> <span style="font-size: 0.8rem; background: #ff3366; color: #fff; padding: 0.1rem 0.5rem; border-radius: 12px;">${users.length}</span>`;
+    groupBlock.appendChild(groupHeader);
+    
+    // Create Users Container
+    const usersList = document.createElement('div');
+    usersList.style.cssText = 'padding: 1rem; display: flex; flex-direction: column; gap: 1rem;';
+    
+    users.forEach((u, idx) => {
+      // Re-use snippet logic from renderRadarResults but heavily simplified as a minimal card
+      const uCard = document.createElement('div');
+      uCard.style.cssText = 'background: #1a1a2e; padding: 1rem; border-radius: 6px; border-left: 3px solid #ffcc00; display: flex; justify-content: space-between; align-items: center;';
+      uCard.innerHTML = `
+        <div>
+          <div style="font-weight: bold; color: #fff; margin-bottom: 0.2rem;">${escapeHTML(u.username)} <span class="tag tag-npd" style="font-size: 0.7rem; padding: 0.1rem 0.3rem;">${escapeHTML(u.disorder_type)}</span></div>
+          <div style="font-size: 0.8rem; color: #888;">"${escapeHTML(u.evidence).substring(0, 40)}..."</div>
+        </div>
+        <button class="btn btn-sm btn-secondary btn-pool-import">⚔️ 导入探讨</button>
+      `;
+      
+      const importBtn = uCard.querySelector('.btn-pool-import');
+      importBtn.addEventListener('click', () => {
+        document.querySelector('[data-view="view-setup"]').click();
+        document.getElementById('agent-a-name').value = u.username;
+        const basicBg = document.getElementById('agent-a-background');
+        if (basicBg) {
+          basicBg.value = `从本地档案库【${groupName}】中调取的危险分子。\n典型特征：${u.disorder_type}\n核心言论："${u.evidence}"`;
+        }
+        document.getElementById('agent-a-wound').value = u.core_wound_guess;
+        document.getElementById('agent-a-grandiosity').value = 95;
+        document.getElementById('agent-a-vulnerability').value = 90;
+        document.getElementById('agent-a-admiration').value = 85;
+        document.getElementById('agent-a-rivalry').value = 95;
+        document.getElementById('agent-a-empathy').value = 5;
+        document.getElementById('agent-a-rage').value = 15;
+        ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(trait => {
+          const el = document.getElementById(`agent-a-${trait}`);
+          if(el) el.dispatchEvent(new Event('input'));
+        });
+        alert(`档案已载入！准备对线：${u.username}`);
+      });
+      
+      usersList.appendChild(uCard);
+    });
+    
+    groupBlock.appendChild(usersList);
+    poolContainer.appendChild(groupBlock);
+  });
+}
+
+// ============================================
 // Radar / Find Poseur Mode
 // ============================================
 function initRadar() {
   const btn = document.getElementById('btn-scan-radar');
   if(!btn) return;
+  
+  // Init pool UI
+  renderTargetPool();
+  
+  // Clear pool logic
+  const btnClearPool = document.getElementById('btn-clear-pool');
+  if(btnClearPool) {
+    btnClearPool.addEventListener('click', () => {
+      if(confirm('确定要清空所有已保存的 NPD 嫌疑人本地档案吗？此操作无法恢复。')) {
+        localStorage.removeItem(POOL_STORAGE_KEY);
+        renderTargetPool();
+      }
+    });
+  }
   
   const chatLogInput = document.getElementById('chat-log-input');
   const statusSpan = document.getElementById('radar-status');
@@ -362,6 +480,16 @@ function initRadar() {
       }
       
       document.getElementById('radar-status').textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
+      
+      // Attempt to find the group name used for this scan
+      const groupNameInput = document.getElementById('radar-wechat-target');
+      const groupName = groupNameInput ? groupNameInput.value : '最近导入的数据';
+      
+      // Save valid findings to local pool
+      if (scannedUsers.length > 0) {
+        saveToTargetPool(groupName, scannedUsers);
+      }
+      
       renderRadarResults(scannedUsers);
     } catch (e) {
       document.getElementById('radar-status').textContent = `错误: ${e.message}`;
@@ -430,10 +558,15 @@ function renderRadarResults(users) {
         // Remove reasoning block if present (<think>...</think>)
         let finalOutput = resultRaw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         
+        if (!finalOutput || finalOutput.length < 5 || finalOutput.includes("I cannot fulfill") || finalOutput.includes("As an AI") || finalOutput.includes("作为人工智能")) {
+          finalOutput = `[系统拦截提示]：由于目标的安全策略，大语言模型拒绝生成激烈的攻击性回复。\n\n[灰石法则 (Grey Rock) 替代话术推荐]：\n“哦，你说的确实有些道理，但我现在不太关心这个。先这样吧。”\n(这种毫不关心、没有情绪波动的回复，是对剥夺 NPD 供血最致命的武器。)`;
+        }
+
         outputArea.classList.remove('hidden');
         textArea.value = finalOutput;
       } catch (e) {
-        alert('生成锐评失败: ' + e.message);
+        outputArea.classList.remove('hidden');
+        textArea.value = `[生成报错]：\n${e.message}\n(这通常是因为模型严格的 Safety Filter 阻断了 API 返回，您可以尝试更换无审查的大模型（如本地部署或无审查版），或直接将此人【导入主推演引擎】进行长线防卫分析。)`;
       } finally {
         generateBtn.disabled = false;
         generateBtn.textContent = '🔪 刷新致命锐评';

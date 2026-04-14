@@ -392,7 +392,19 @@
             </div>
           </div>
 
-          <div class="radar-results-section" id="radar-results" style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <div class="target-pool-section" style="margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2a45; padding-bottom: 0.5rem; margin-bottom: 1rem;">
+              <h2 style="margin: 0; font-size: 1.2rem; color: #fff;">🗃️ 嫌疑人档案库 (Target Pool)</h2>
+              <button id="btn-clear-pool" class="btn btn-sm btn-ghost" style="color: #666;">清空本地档案</button>
+            </div>
+            <div id="target-pool-results" style="display: flex; flex-direction: column; gap: 1rem;">
+              <!-- Grouped Radar targets will be loaded here from localStorage -->
+              <div style="color: #666; font-size: 0.9rem; font-style: italic;">档案库空空如也。请在上方输入群组进行提取，截获的患者将被永久钉在这里。</div>
+            </div>
+          </div>
+
+          <div class="radar-results-section" id="radar-results" style="display: flex; flex-direction: column; gap: 1.5rem; padding-top: 2rem; border-top: 2px dashed #2a2a45;">
+            <h3 style="margin-top: 0; color: #00d0ff;">✨ 最新扫描结果</h3>
             <!-- Radar cards will be populated here -->
           </div>
         </div>
