@@ -273,7 +273,7 @@ function initRadar() {
       chatLogInput.value = "";
 
       try {
-        const response = await fetch(\`/api/wechat-history?name=\${encodeURIComponent(targetName)}&limit=\${targetLimit}\`);
+        const response = await fetch(`/api/wechat-history?name=${encodeURIComponent(targetName)}&limit=${targetLimit}`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -281,10 +281,10 @@ function initRadar() {
         }
 
         if (!result.data || result.data.trim() === '') {
-          statusSpan.textContent = \`⚠️ 未找到名为 [\${targetName}] 的聊天记录，请检查名称是否完全匹配。\`;
+          statusSpan.textContent = `⚠️ 未找到名为 [${targetName}] 的聊天记录，请检查名称是否完全匹配。`;
         } else {
           chatLogInput.value = result.data;
-          statusSpan.textContent = \`✅ 自动获取成功！(查获 \${result.data.split('\\n').length} 行数据)\`;
+          statusSpan.textContent = `✅ 自动获取成功！(查获 ${result.data.split('\n').length} 行数据)`;
         }
       } catch (err) {
         alert(
@@ -295,7 +295,7 @@ function initRadar() {
           "2. sudo wechat-cli init\n\n" +
           "按提示授权盘符读取后，刷新本页面再试一次！\n\n错误信息：" + err.message
         );
-        statusSpan.textContent = \`❌ 提取失败：\${err.message}\`;
+        statusSpan.textContent = `❌ 提取失败：${err.message}`;
       } finally {
         btnAutoExtract.disabled = false;
         btnAutoExtract.textContent = "⚡️ 一键提取并拉取";
