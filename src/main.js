@@ -349,10 +349,10 @@ function initRadar() {
         throw new Error('解析失败。LLM 没有返回标准的 JSON 数组。');
       }
       
-      document.getElementById('radar-status').textContent = \`扫描完成！发现 \${scannedUsers.length} 位疑似目标。\`;
+      document.getElementById('radar-status').textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
       renderRadarResults(scannedUsers);
     } catch (e) {
-      document.getElementById('radar-status').textContent = \`错误: \${e.message}\`;
+      document.getElementById('radar-status').textContent = `错误: ${e.message}`;
     } finally {
       document.getElementById('btn-scan-radar').disabled = false;
     }
@@ -373,21 +373,21 @@ function renderRadarResults(users) {
     card.className = 'radar-target-card';
     card.style.cssText = 'background: #1a1a2e; border: 1px solid #ff3366; border-radius: 8px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;';
     
-    card.innerHTML = \`
+    card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div>
-          <h3 style="color: #ff3366; margin: 0 0 0.5rem 0;">🎯 锁定目标: \${escapeHTML(u.username)}</h3>
-          <span class="tag tag-npd">\${escapeHTML(u.disorder_type)}</span>
+          <h3 style="color: #ff3366; margin: 0 0 0.5rem 0;">🎯 锁定目标: ${escapeHTML(u.username)}</h3>
+          <span class="tag tag-npd">${escapeHTML(u.disorder_type)}</span>
         </div>
-        <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="\${index}">🔪 生成致命锐评</button>
+        <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="${index}">🔪 生成致命锐评</button>
       </div>
       <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 6px; border-left: 3px solid #ff3366;">
         <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.3rem;">典型症状原话:</div>
-        <div style="font-style: italic; color: #ccc;">"\${escapeHTML(u.evidence)}"</div>
+        <div style="font-style: italic; color: #ccc;">"${escapeHTML(u.evidence)}"</div>
       </div>
       <div>
         <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.3rem;">推测核心伤口 (Core Wound):</div>
-        <div style="color: #ffcc00;">\${escapeHTML(u.core_wound_guess)}</div>
+        <div style="color: #ffcc00;">${escapeHTML(u.core_wound_guess)}</div>
       </div>
       <div class="critique-output hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #2a2a45;">
         <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.5rem; display:flex; justify-content: space-between;">
@@ -396,7 +396,7 @@ function renderRadarResults(users) {
         </div>
         <textarea class="critique-text" rows="4" style="width: 100%; background: #12121a; color: #fff; border: 1px solid #666; padding: 0.8rem; border-radius: 4px;" readonly></textarea>
       </div>
-    \`;
+    `;
     
     container.appendChild(card);
     
