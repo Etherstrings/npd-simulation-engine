@@ -5,7 +5,7 @@
 
 import { createNPDAgent, createCounterAgent, snapshotState } from './agent.js';
 import { updateNPDState, updateCounterState, parseAttackAnalysis, calculateEscalation } from './psychology.js';
-import { buildNPDPrompt, buildCounterPrompt, buildScenarioContext } from './prompts.js';
+import { buildNPDPrompt, buildCounterPrompt, buildScenarioContext, buildHumanEvaluationPrompt } from './prompts.js';
 import { callLLM, parseLLMResponse } from '../utils/api.js';
 
 export class SimulationEngine {
@@ -61,6 +61,24 @@ export class SimulationEngine {
     this.currentRound = 0;
     this.isRunning = false;
     this.isPaused = false;
+    this.humanInputResolve = null;
+  }
+  
+  /**
+   * For Human Player Mode
+   */
+  async waitForHumanInput() {
+    this.emit('waitForUser');
+    return new Promise(resolve => {
+      this.humanInputResolve = resolve;
+    });
+  }
+
+  submitHumanInput(text) {
+    if (this.humanInputResolve) {
+      this.humanInputResolve(text);
+      this.humanInputResolve = null;
+    }
   }
   
   /**
@@ -169,19 +187,34 @@ export class SimulationEngine {
     }
     
     // === Counter-Agent responds ===
-    this.emit('typing', { agent: 'counter' });
+    let counterParsed;
     
     // Update counter state before generating
     const counterState = updateCounterState(
       this.counterAgent, round, maxRounds, this.npdAgent.state
     );
     
-    const counterPrompt = buildCounterPrompt(
-      this.counterAgent, this.npdAgent, this.scenario, round, maxRounds, this.config.escalationRate
-    );
+    if (this.config.humanMode) {
+      const humanText = await this.waitForHumanInput();
+      this.emit('system', { message: `⚖️ 心理裁判系统正在评估你的反击策略...` });
+      
+      const evalPrompt = buildHumanEvaluationPrompt(humanText, this.npdAgent, this.scenario);
+      const evalRaw = await callLLM(evalPrompt, []);
+      const evalParsed = parseLLMResponse(evalRaw);
+      
+      counterParsed = {
+        dialogue: humanText,
+        metadata: evalParsed.metadata || {}
+      };
+    } else {
+      this.emit('typing', { agent: 'counter' });
+      const counterPrompt = buildCounterPrompt(
+        this.counterAgent, this.npdAgent, this.scenario, round, maxRounds, this.config.escalationRate
+      );
+      const counterRaw = await callLLM(counterPrompt, this.conversationHistory.counter);
+      counterParsed = parseLLMResponse(counterRaw);
+    }
     
-    const counterRaw = await callLLM(counterPrompt, this.conversationHistory.counter);
-    const counterParsed = parseLLMResponse(counterRaw);
     roundData.counterMessage = counterParsed;
     roundData.counterIntensity = counterState.currentIntensity;
     

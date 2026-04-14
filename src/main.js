@@ -5,9 +5,9 @@
 
 import './style.css';
 import { SimulationEngine } from './engine/simulation.js';
-import { getScenarios } from './engine/prompts.js';
+import { getScenarios, buildScannerPrompt, buildCritiquePrompt } from './engine/prompts.js';
 import { DEFENSE_MECHANISMS, ATTACK_PATTERNS, COUNTER_STRATEGIES } from './engine/agent.js';
-import { loadSettings, saveSettings } from './utils/api.js';
+import { loadSettings, saveSettings, callLLM, parseLLMResponse } from './utils/api.js';
 import { exportJSON, exportCSV, exportFullReport, calculateStats } from './utils/export.js';
 
 // ============================================
@@ -25,9 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
   engine.onUpdate = handleEngineEvent;
   
   initScenarios();
+  initPresets();
   initSliders();
   initSettings();
   initButtons();
+  initRadar();
   initExport();
   
   // Check if API key already set
@@ -58,6 +60,59 @@ function initScenarios() {
     });
     grid.appendChild(card);
   });
+}
+
+// ============================================
+// Presets
+// ============================================
+const agentPresets = {
+  boss: {
+    name: 'Richard', background: '公司空降高管，认为自己是来拯救这群废物的。极度迷恋权力和地位。',
+    wound: '极度害怕失去控制权和权威形象，害怕被人看出他的业务能力其实很差。', subtype: 'grandiose',
+    grandiosity: 95, vulnerability: 30, admiration: 80, rivalry: 90, empathy: 85, rage: 60
+  },
+  partner: {
+    name: 'Sarah', background: '相恋3年的伴侣。表面上付出很多，但实际上把伴侣当成自己的情绪垃圾桶和附属品。',
+    wound: '害怕被抛弃，害怕自己变成"施虐者"的真实面目被揭穿。', subtype: 'vulnerable',
+    grandiosity: 60, vulnerability: 95, admiration: 70, rivalry: 50, empathy: 80, rage: 50
+  },
+  parent: {
+    name: 'Mother/Father', background: '控制欲极强的传统长辈。在亲戚面前表现得像模范父母，关起门来对孩子极其刻薄。',
+    wound: '害怕失去对孩子命运的掌控，害怕孩子超越自己，失去"家长"绝对支配特权。', subtype: 'mixed',
+    grandiosity: 80, vulnerability: 75, admiration: 90, rivalry: 60, empathy: 95, rage: 65
+  },
+  artist: {
+    name: 'Vincent', background: '自命不凡的小众艺术家。认为全世界都不懂他，其他成功的人都是俗气的垃圾。',
+    wound: '内心深处知道自己的才华不足以支撑野心，极度嫉妒比自己更有成就的人。', subtype: 'grandiose',
+    grandiosity: 90, vulnerability: 80, admiration: 95, rivalry: 85, empathy: 100, rage: 40
+  }
+};
+
+function initPresets() {
+  const presetSelect = document.getElementById('agent-a-preset');
+  if (presetSelect) {
+    presetSelect.addEventListener('change', (e) => {
+      const p = agentPresets[e.target.value];
+      if (!p) return;
+      document.getElementById('agent-a-name').value = p.name;
+      document.getElementById('agent-a-background').value = p.background;
+      document.getElementById('agent-a-wound').value = p.wound;
+      document.getElementById('agent-a-subtype').value = p.subtype;
+      document.getElementById('agent-a-grandiosity').value = p.grandiosity;
+      document.getElementById('agent-a-vulnerability').value = p.vulnerability;
+      document.getElementById('agent-a-admiration').value = p.admiration;
+      document.getElementById('agent-a-rivalry').value = p.rivalry;
+      document.getElementById('agent-a-empathy').value = p.empathy;
+      document.getElementById('agent-a-rage').value = p.rage;
+      
+      document.getElementById('v-grandiosity').textContent = p.grandiosity;
+      document.getElementById('v-vulnerability').textContent = p.vulnerability;
+      document.getElementById('v-admiration').textContent = p.admiration;
+      document.getElementById('v-rivalry').textContent = p.rivalry;
+      document.getElementById('v-empathy').textContent = p.empathy;
+      document.getElementById('v-rage').textContent = p.rage;
+    });
+  }
 }
 
 // ============================================
@@ -147,6 +202,9 @@ function showSettings() {
 function initButtons() {
   document.getElementById('btn-start').addEventListener('click', startSimulation);
   document.getElementById('btn-new').addEventListener('click', resetToSetup);
+  document.getElementById('btn-radar').addEventListener('click', () => {
+    showView('radar');
+  });
   document.getElementById('btn-pause').addEventListener('click', togglePause);
   document.getElementById('btn-step').addEventListener('click', () => {
     if (engine.isPaused) {
@@ -157,10 +215,226 @@ function initButtons() {
   document.getElementById('btn-stop').addEventListener('click', () => {
     engine.stop();
   });
+  
+  const humanToggle = document.getElementById('human-mode-toggle');
+  if (humanToggle) {
+    humanToggle.addEventListener('change', (e) => {
+      const isHuman = e.target.checked;
+      document.getElementById('agent-b-style').disabled = isHuman;
+      document.getElementById('agent-b-attack').disabled = isHuman;
+      document.getElementById('agent-b-escalation').disabled = isHuman;
+    });
+  }
+  
+  document.getElementById('btn-human-send').addEventListener('click', () => {
+    const input = document.getElementById('human-input-text');
+    const text = input.value.trim();
+    if (text) {
+      document.getElementById('human-input-area').classList.add('hidden');
+      input.value = '';
+      if (engine) engine.submitHumanInput(text);
+    }
+  });
+  document.getElementById('human-input-text').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('btn-human-send').click();
+    }
+  });
 }
 
 // ============================================
-// Export
+// Radar / Find Poseur Mode
+// ============================================
+function initRadar() {
+  const btn = document.getElementById('btn-scan-radar');
+  if(!btn) return;
+  
+  const chatLogInput = document.getElementById('chat-log-input');
+  const statusSpan = document.getElementById('radar-status');
+
+  // Auto Extract Logic (wechat-cli)
+  const btnAutoExtract = document.getElementById('btn-auto-extract');
+  const inputTargetName = document.getElementById('wechat-target-name');
+  const selectTargetLimit = document.getElementById('wechat-target-limit');
+
+  if(btnAutoExtract) {
+    btnAutoExtract.addEventListener('click', async () => {
+      const targetName = inputTargetName.value.trim();
+      const targetLimit = selectTargetLimit.value;
+
+      if (!targetName) {
+        statusSpan.textContent = "⚠️ 请先写上你要查的群名或者人名！";
+        return;
+      }
+
+      btnAutoExtract.disabled = true;
+      btnAutoExtract.textContent = "⏳ 正在突破底层数据库...";
+      statusSpan.textContent = "正在调用 wechat-cli 从本机抽取...";
+      chatLogInput.value = "";
+
+      try {
+        const response = await fetch(\`/api/wechat-history?name=\${encodeURIComponent(targetName)}&limit=\${targetLimit}\`);
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || result.details || "未知抽取错误");
+        }
+
+        if (!result.data || result.data.trim() === '') {
+          statusSpan.textContent = \`⚠️ 未找到名为 [\${targetName}] 的聊天记录，请检查名称是否完全匹配。\`;
+        } else {
+          chatLogInput.value = result.data;
+          statusSpan.textContent = \`✅ 自动获取成功！(查获 \${result.data.split('\\n').length} 行数据)\`;
+        }
+      } catch (err) {
+        alert(
+          "🚨 底层提取失败！\n\n" +
+          "系统必须要借助 wechat-cli 才能阅读被加密的信源。\n" +
+          "请打开你的电脑终端 (Terminal) 执行以下两段命令：\n\n" +
+          "1. npm i -g @canghe_ai/wechat-cli\n" +
+          "2. sudo wechat-cli init\n\n" +
+          "按提示授权盘符读取后，刷新本页面再试一次！\n\n错误信息：" + err.message
+        );
+        statusSpan.textContent = \`❌ 提取失败：\${err.message}\`;
+      } finally {
+        btnAutoExtract.disabled = false;
+        btnAutoExtract.textContent = "⚡️ 一键提取并拉取";
+      }
+    });
+  }
+
+  // Clipboard Button
+  const btnClipboard = document.getElementById('btn-clipboard');
+  if(btnClipboard) {
+    btnClipboard.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if(text) {
+          chatLogInput.value = text;
+          statusSpan.textContent = '✅ 已成功吸附剪贴板聊天记录';
+        } else {
+          statusSpan.textContent = '⚠️ 剪贴板为空或不是文本';
+        }
+      } catch (err) {
+        statusSpan.textContent = '❌ 无法读取剪贴板，请允许浏览器权限或手动粘贴';
+      }
+    });
+  }
+
+
+  btn.addEventListener('click', async () => {
+    const text = document.getElementById('chat-log-input').value.trim();
+    if (!text) return;
+    
+    // Check API
+    const settings = loadSettings();
+    if (!settings?.apiKey) {
+      showSettings();
+      return;
+    }
+    
+    document.getElementById('radar-status').textContent = '扫描中，请稍候...';
+    document.getElementById('btn-scan-radar').disabled = true;
+    
+    try {
+      const prompt = buildScannerPrompt();
+      const history = [{ role: 'user', content: text }];
+      const resultRaw = await callLLM(prompt, history);
+      
+      let jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0] || '[]';
+      let scannedUsers = [];
+      try {
+        scannedUsers = JSON.parse(jsonStr);
+      } catch (e) {
+        throw new Error('解析失败。LLM 没有返回标准的 JSON 数组。');
+      }
+      
+      document.getElementById('radar-status').textContent = \`扫描完成！发现 \${scannedUsers.length} 位疑似目标。\`;
+      renderRadarResults(scannedUsers);
+    } catch (e) {
+      document.getElementById('radar-status').textContent = \`错误: \${e.message}\`;
+    } finally {
+      document.getElementById('btn-scan-radar').disabled = false;
+    }
+  });
+}
+
+function renderRadarResults(users) {
+  const container = document.getElementById('radar-results');
+  container.innerHTML = '';
+  
+  if (users.length === 0) {
+    container.innerHTML = '<div style="color:#aaa; text-align:center; padding: 2rem;">没有在样本中扫描出明显的 Cluster-B 毒性人格。你可以尝试上传更具争议性的聊天记录。</div>';
+    return;
+  }
+  
+  users.forEach((u, index) => {
+    const card = document.createElement('div');
+    card.className = 'radar-target-card';
+    card.style.cssText = 'background: #1a1a2e; border: 1px solid #ff3366; border-radius: 8px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;';
+    
+    card.innerHTML = \`
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h3 style="color: #ff3366; margin: 0 0 0.5rem 0;">🎯 锁定目标: \${escapeHTML(u.username)}</h3>
+          <span class="tag tag-npd">\${escapeHTML(u.disorder_type)}</span>
+        </div>
+        <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="\${index}">🔪 生成致命锐评</button>
+      </div>
+      <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 6px; border-left: 3px solid #ff3366;">
+        <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.3rem;">典型症状原话:</div>
+        <div style="font-style: italic; color: #ccc;">"\${escapeHTML(u.evidence)}"</div>
+      </div>
+      <div>
+        <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.3rem;">推测核心伤口 (Core Wound):</div>
+        <div style="color: #ffcc00;">\${escapeHTML(u.core_wound_guess)}</div>
+      </div>
+      <div class="critique-output hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #2a2a45;">
+        <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.5rem; display:flex; justify-content: space-between;">
+          <span>生成的反击话术 (可直接复制发到群里):</span>
+          <button class="btn btn-sm btn-ghost btn-copy">📋 复制</button>
+        </div>
+        <textarea class="critique-text" rows="4" style="width: 100%; background: #12121a; color: #fff; border: 1px solid #666; padding: 0.8rem; border-radius: 4px;" readonly></textarea>
+      </div>
+    \`;
+    
+    container.appendChild(card);
+    
+    const generateBtn = card.querySelector('.btn-generate-critique');
+    const outputArea = card.querySelector('.critique-output');
+    const textArea = card.querySelector('.critique-text');
+    const copyBtn = card.querySelector('.btn-copy');
+    
+    generateBtn.addEventListener('click', async () => {
+      generateBtn.disabled = true;
+      generateBtn.textContent = '生成中...';
+      try {
+        const prompt = buildCritiquePrompt(u);
+        const resultRaw = await callLLM(prompt, []); // No history needed for single shot
+        
+        // Remove reasoning block if present (<think>...</think>)
+        let finalOutput = resultRaw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        
+        outputArea.classList.remove('hidden');
+        textArea.value = finalOutput;
+      } catch (e) {
+        alert('生成锐评失败: ' + e.message);
+      } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = '🔪 刷新致命锐评';
+      }
+    });
+    
+    copyBtn.addEventListener('click', () => {
+      textArea.select();
+      document.execCommand('copy');
+      copyBtn.textContent = '✅ 已复制';
+      setTimeout(() => copyBtn.textContent = '📋 复制', 2000);
+    });
+  });
+}
+
+// ============================================
 // ============================================
 function initExport() {
   document.getElementById('btn-export').addEventListener('click', () => {
@@ -221,6 +495,7 @@ function startSimulation() {
     maxRounds: parseInt(document.getElementById('max-rounds').value) || 15,
     escalationRate: document.getElementById('escalation-rate').value,
     language: document.getElementById('language').value,
+    humanMode: document.getElementById('human-mode-toggle')?.checked || false,
     npdAgent: {
       name: document.getElementById('agent-a-name').value || 'Victor',
       background: document.getElementById('agent-a-background').value || '',
@@ -339,6 +614,11 @@ function handleEngineEvent(event, data) {
       
     case 'system':
       addSystemMessage(data.message);
+      break;
+      
+    case 'waitForUser':
+      document.getElementById('human-input-area').classList.remove('hidden');
+      document.getElementById('human-input-text').focus();
       break;
       
     case 'typing':

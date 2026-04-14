@@ -57,6 +57,7 @@
         <span class="badge">NARC Framework v1.0</span>
       </div>
       <div class="header-right">
+        <button id="btn-radar" class="btn btn-ghost">🔍 病患雷达</button>
         <button id="btn-settings" class="btn btn-ghost">⚙️ API 设置</button>
         <button id="btn-export" class="btn btn-ghost" disabled>📊 导出数据</button>
         <button id="btn-new" class="btn btn-accent">+ 新模拟</button>
@@ -92,6 +93,15 @@
               <div class="agent-setup-header npd">
                 <span class="agent-icon">🎭</span>
                 <h3>Agent A — NPD 自恋者</h3>
+                <div class="preset-selector" style="margin-left: auto;">
+                  <select id="agent-a-preset" class="btn btn-sm" style="background: rgba(255,51,102,0.1); border: 1px solid rgba(255,51,102,0.3); color: #ff3366; font-size: 0.85rem; padding: 0.2rem 0.5rem; border-radius: 4px;">
+                    <option value="">载入预设样本...</option>
+                    <option value="boss">暴君上司</option>
+                    <option value="partner">控制狂伴侣</option>
+                    <option value="parent">吸血鬼父母</option>
+                    <option value="artist">完美主义艺术家</option>
+                  </select>
+                </div>
               </div>
               <div class="agent-setup-body">
                 <div class="form-group">
@@ -153,6 +163,12 @@
               <div class="agent-setup-header counter">
                 <span class="agent-icon">🎯</span>
                 <h3>Agent B — Counter-Agent 对抗者</h3>
+                <div class="mode-selector" style="margin-left: auto;">
+                  <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; color: #aaa;">
+                    <input type="checkbox" id="human-mode-toggle" />
+                    👤 手动扮演
+                  </label>
+                </div>
               </div>
               <div class="agent-setup-body">
                 <div class="form-group">
@@ -271,6 +287,10 @@
                 </div>
                 <span id="escalation-value">0%</span>
               </div>
+              <div class="human-input-area hidden" id="human-input-area" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                <input type="text" id="human-input-text" class="input" style="flex: 1; padding: 0.8rem; background: #12121a; border: 1px solid #2a2a45; color: #fff; border-radius: 8px;" placeholder="输入你的反击话术..." />
+                <button id="btn-human-send" class="btn btn-primary">发送</button>
+              </div>
             </div>
           </div>
 
@@ -322,6 +342,58 @@
             <button id="btn-export-json" class="btn btn-primary">📄 导出 JSON</button>
             <button id="btn-export-csv" class="btn btn-secondary">📊 导出 CSV</button>
             <button id="btn-export-full" class="btn btn-secondary">📋 导出完整报告</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Radar (Chat Log Scanner) -->
+      <section id="view-radar" class="view hidden">
+        <div class="radar-container" style="max-width: 1000px; margin: 0 auto; padding: 2rem;">
+          <div class="setup-header" style="margin-bottom: 2rem;">
+            <h2>🕵️‍♂️ 群聊病患雷达</h2>
+            <p class="subtitle">将群聊记录（微信、QQ等）粘贴在下方，引擎将扫描并提取出具有 NPD/HPD 等毒性特征的危险分子，并提供破防话术支持。</p>
+          </div>
+          
+          <div class="radar-upload-dashboard" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem;">
+            
+            <div class="guide-panel" style="background: rgba(0, 208, 255, 0.05); border-left: 4px solid #00d0ff; padding: 1rem 1.5rem; border-radius: 4px;">
+              <h3 style="color: #00d0ff; margin-top: 0;">⚡️ 底层全自动接入启动</h3>
+              <p style="font-size: 0.9rem; color: #ccc; margin-bottom: 0.5rem;">本功能现已接入 <code>wechat-cli</code> 底层中转引擎，无需手动查找和上传文件！</p>
+              <p style="font-size: 0.85rem; color: #aaa; margin: 0;"><strong>⚠️ 初次使用注意事项：</strong>请确保您已在计算机终端执行过 <code>npm i -g @canghe_ai/wechat-cli</code> 并且运行过一次 <code>sudo wechat-cli init</code> 授权数据库访问。</p>
+            </div>
+
+            <div class="upload-panel" style="display: flex; gap: 1rem; align-items: flex-end; background: #12121a; padding: 1.5rem; border-radius: 8px; border: 1px solid #333;">
+              <div style="flex: 3;">
+                <label for="wechat-target-name" style="color: #fff; display: block; margin-bottom: 0.5rem; font-weight: bold;">🎯 目标定位 (群名或人名)</label>
+                <input type="text" id="wechat-target-name" style="width: 100%; padding: 1rem; background: #000; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 1.1rem;" placeholder="例如：相亲相爱一家人">
+              </div>
+              <div style="flex: 1;">
+                <label for="wechat-target-limit" style="color: #888; display: block; margin-bottom: 0.5rem;">获取最近的消息数</label>
+                <select id="wechat-target-limit" style="width: 100%; padding: 1rem; background: #000; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 1rem;">
+                  <option value="100">100 条</option>
+                  <option value="300" selected>300 条</option>
+                  <option value="800">800 条</option>
+                  <option value="2000">2000 条</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <button id="btn-auto-extract" class="btn btn-primary" style="width: 100%; height: 3.5rem; font-size: 1rem;">⚡️ 一键提取并拉取</button>
+              </div>
+            </div>
+
+            <div class="preview-panel">
+              <label for="chat-log-input" style="font-size: 0.85rem; color: #888; display: block; margin-bottom: 0.5rem;">将载入数据缓冲区 (可进行最终修饰)</label>
+              <textarea id="chat-log-input" rows="8" style="font-family: 'JetBrains Mono', monospace; background: #12121a; color: #a1a1b5; border: 1px solid #2a2a45; border-radius: 8px; padding: 1rem; width: 100%; resize: vertical;" placeholder="文件装载后将在此处显示预览... 您也可以直接在这里手动打字。"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 1rem;">
+              <span id="radar-status" style="color: #ff3366; font-size: 0.95rem; font-weight: bold;"></span>
+              <button id="btn-scan-radar" class="btn btn-primary btn-large">🧿 发送数据并扫描病患</button>
+            </div>
+          </div>
+
+          <div class="radar-results-section" id="radar-results" style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Radar cards will be populated here -->
           </div>
         </div>
       </section>
