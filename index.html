@@ -371,7 +371,10 @@
 
           <!-- Step 2: Time range -->
           <div id="radar-step-2" class="hidden" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 1.5rem;">
-            <h3 style="margin: 0 0 1rem 0; color: #00d0ff;">② 选择分析时间范围</h3>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+              <h3 style="margin: 0; color: #00d0ff;">② 选择分析时间范围</h3>
+              <button id="btn-quick-scan" class="btn btn-primary" style="padding: 0.6rem 2rem; font-size: 1rem; box-shadow: 0 0 15px rgba(0,212,255,0.3);">🧿 扫描群组病患</button>
+            </div>
             <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
               <button class="btn btn-sm btn-ghost btn-time-range" data-days="3">📅 近 3 天</button>
               <button class="btn btn-sm btn-ghost btn-time-range" data-days="7">📅 近 7 天</button>
@@ -380,6 +383,7 @@
               <input type="date" id="radar-start-date" style="background: #12121a; border: 1px solid #444; border-radius: 6px; color: #fff; padding: 0.35rem 0.7rem; font-size: 0.9rem;">
             </div>
             <div id="selected-range-badge" style="margin-top: 0.75rem; font-size: 0.85rem; color: #888;">请选择时间范围，或不选（读取最近消息）</div>
+            <div id="radar-quick-status" style="margin-top: 1rem; color: #ff3366; font-size: 0.9rem; font-weight: bold; min-height: 1.2rem;"></div>
           </div>
 
           <!-- Step 3: Extract + Scan -->
@@ -388,10 +392,10 @@
             <label style="font-size: 0.85rem; color: #888; display: block; margin-bottom: 0.5rem;">数据缓冲区（可手动编辑）</label>
             <textarea id="chat-log-input" rows="8" style="font-family: 'JetBrains Mono', monospace; background: #12121a; color: #a1a1b5; border: 1px solid #2a2a45; border-radius: 8px; padding: 1rem; width: 100%; resize: vertical;" placeholder="点击"一键提取"加载聊天记录…也可在此直接粘贴文本。"></textarea>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; gap: 1rem; flex-wrap: wrap;">
-              <button id="btn-auto-extract" class="btn btn-secondary">⚡️ 一键提取聊天记录</button>
+              <button id="btn-auto-extract" class="btn btn-secondary">⚡️ 一键提取到缓冲区</button>
               <div style="display: flex; align-items: center; gap: 1rem;">
                 <span id="radar-status" style="color: #ff3366; font-size: 0.9rem; font-weight: bold;"></span>
-                <button id="btn-scan-radar" class="btn btn-primary btn-large">🧿 AI 扫描病患</button>
+                <button id="btn-scan-radar" class="btn btn-ghost" style="border: 1px dashed #444;">🧿 扫描缓冲区数据</button>
               </div>
             </div>
           </div>

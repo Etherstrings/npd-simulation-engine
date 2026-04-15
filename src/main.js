@@ -9,6 +9,7 @@ import { getScenarios, buildScannerPrompt, buildCritiquePrompt } from './engine/
 import { DEFENSE_MECHANISMS, ATTACK_PATTERNS, COUNTER_STRATEGIES } from './engine/agent.js';
 import { loadSettings, saveSettings, callLLM, parseLLMResponse } from './utils/api.js';
 import { exportJSON, exportCSV, exportFullReport, calculateStats } from './utils/export.js';
+import { getWechatSessionName } from './utils/wechatSessions.js';
 
 // ============================================
 // State
@@ -368,7 +369,9 @@ function downloadJSON(data, filename) {
 
 // ── Import a target into the simulation setup panel ───────────────────────
 function importTargetToSim(u, groupName) {
-  document.querySelector('[data-view="view-setup"]').click();
+  // Navigate back to setup view (btn-new calls resetToSetup which calls showView)
+  showView('setup');
+
   document.getElementById('agent-a-name').value = u.username;
   const basicBg = document.getElementById('agent-a-background');
   if (basicBg) {
@@ -428,9 +431,12 @@ function initRadar() {
         return;
       }
 
+      // Deduplicate by name before rendering
+      const seenNames = new Set();
       sessions.forEach(s => {
-        const name = s.name || s.nickname || s.chat_name || JSON.stringify(s);
-        if (!name || name.length < 1) return;
+        const name = getWechatSessionName(s);
+        if (!name || name.length < 1 || seenNames.has(name)) return;
+        seenNames.add(name);
 
         const chip = document.createElement('button');
         chip.className = 'btn btn-sm btn-ghost';
@@ -496,61 +502,54 @@ function initRadar() {
     }
   });
 
-  // ── Step 3: Extract button ─────────────────────────────────────────────
-  document.getElementById('btn-auto-extract').addEventListener('click', async () => {
-    const groupName = selectedGroup;
-    if (!groupName) {
-      alert('请先在第①步选择一个群聊。');
-      return;
-    }
-    const statusSpan = document.getElementById('radar-status');
-    const chatLogInput = document.getElementById('chat-log-input');
-    const extractBtn = document.getElementById('btn-auto-extract');
+  // ── Helper: Unified Extract & Scan Logic ────────────────────────────────
+  async function performFullScan(targetGroup, targetDate, sourceArea = 'quick') {
+    const statusMsg = sourceArea === 'quick' 
+      ? document.getElementById('radar-quick-status') 
+      : document.getElementById('radar-status');
+    const inputArea = document.getElementById('chat-log-input');
+    const btn = sourceArea === 'quick'
+      ? document.getElementById('btn-quick-scan')
+      : document.getElementById('btn-scan-radar');
 
-    extractBtn.disabled = true;
-    extractBtn.textContent = '⏳ 正在抽取...';
-    statusSpan.textContent = '正在调用 wechat-cli...';
-    chatLogInput.value = '';
+    if (!targetGroup) { alert('请先选择一个群聊。'); return; }
+    
+    // 1. Check if we need to extract first
+    let text = inputArea.value.trim();
+    const needsExtraction = (sourceArea === 'quick' || !text);
 
-    try {
-      const params = new URLSearchParams({ name: groupName, limit: 500 });
-      if (selectedStartDate) params.set('startDate', selectedStartDate);
-
-      const res = await fetch(`/api/wechat-history?${params}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.details || '提取失败');
-
-      if (!data.data?.trim()) {
-        statusSpan.textContent = '⚠️ 未找到聊天记录，请检查群名是否完全匹配。';
-      } else {
-        chatLogInput.value = data.data;
-        const lines = data.data.split('\n').filter(l => l.trim()).length;
-        statusSpan.textContent = `✅ 成功获取 ${lines} 条消息`;
+    if (needsExtraction) {
+      statusMsg.textContent = '⏳ 正在提取聊天记录...';
+      btn.disabled = true;
+      try {
+        const params = new URLSearchParams({ name: targetGroup, limit: 500 });
+        if (targetDate) params.set('startDate', targetDate);
+        const res = await fetch(`/api/wechat-history?${params}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '提取失败');
+        if (!data.data?.trim()) {
+          statusMsg.textContent = '⚠️ 未找到记录，请检查群名匹配。';
+          btn.disabled = false;
+          return;
+        }
+        text = data.data;
+        inputArea.value = text; // Sync to buffer
+      } catch (err) {
+        statusMsg.textContent = `❌ 提取错误: ${err.message}`;
+        btn.disabled = false;
+        return;
       }
-    } catch (err) {
-      statusSpan.textContent = `❌ ${err.message}`;
-    } finally {
-      extractBtn.disabled = false;
-      extractBtn.textContent = '⚡️ 一键提取聊天记录';
     }
-  });
 
-  // ── Step 3: AI Scan button ─────────────────────────────────────────────
-  document.getElementById('btn-scan-radar').addEventListener('click', async () => {
-    const text = document.getElementById('chat-log-input').value.trim();
-    if (!text) { alert('数据缓冲区为空，请先提取或粘贴聊天记录。'); return; }
-
+    // 2. Perform AI Scan
     const settings = loadSettings();
-    if (!settings?.apiKey) { showSettings(); return; }
+    if (!settings?.apiKey) { showSettings(); btn.disabled = false; return; }
 
-    const statusSpan = document.getElementById('radar-status');
-    statusSpan.textContent = '🧿 AI 扫描中，请稍候...';
-    document.getElementById('btn-scan-radar').disabled = true;
+    statusMsg.textContent = '🧿 AI 正在扫描分析病患特征...';
+    btn.disabled = true;
 
     try {
       const resultRaw = await callLLM(buildScannerPrompt(), [{ role: 'user', content: text }]);
-
-      // Robust JSON extraction
       let scannedUsers = [];
       const jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0];
       try {
@@ -561,24 +560,66 @@ function initRadar() {
         try { scannedUsers = JSON.parse(match ? match[0] : stripped); } catch { scannedUsers = []; }
       }
 
-      statusSpan.textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
-
-      const groupName = selectedGroup || '未知来源';
+      statusMsg.textContent = `✅ 扫描完成！截获 ${scannedUsers.length} 位疑似目标。`;
       lastScanResults = scannedUsers;
-      lastScanGroup = groupName;
+      lastScanGroup = targetGroup;
 
-      if (scannedUsers.length > 0) saveToTargetPool(groupName, scannedUsers);
+      if (scannedUsers.length > 0) saveToTargetPool(targetGroup, scannedUsers);
+      renderRadarResults(scannedUsers, targetGroup);
 
-      renderRadarResults(scannedUsers, groupName);
-
-      const exportBtn = document.getElementById('btn-export-scan');
-      if (exportBtn) exportBtn.classList.remove('hidden');
+      const expBtn = document.getElementById('btn-export-scan');
+      if (expBtn) expBtn.classList.remove('hidden');
 
     } catch (err) {
-      statusSpan.textContent = `❌ 错误: ${err.message}`;
+      statusMsg.textContent = `❌ 扫描错误: ${err.message}`;
     } finally {
-      document.getElementById('btn-scan-radar').disabled = false;
+      btn.disabled = false;
     }
+  }
+
+  // ── Step 2: Quick Scan button ──────────────────────────────────────────
+  document.getElementById('btn-quick-scan').addEventListener('click', () => {
+    performFullScan(selectedGroup, selectedStartDate, 'quick');
+  });
+
+  // ── Step 3: Extract button (Buffer only) ───────────────────────────────
+  document.getElementById('btn-auto-extract').addEventListener('click', async () => {
+    const groupName = selectedGroup;
+    if (!groupName) { alert('请先选择一个群聊。'); return; }
+    
+    const statusSpan = document.getElementById('radar-status');
+    const chatLogInput = document.getElementById('chat-log-input');
+    const extractBtn = document.getElementById('btn-auto-extract');
+
+    extractBtn.disabled = true;
+    extractBtn.textContent = '⏳ 正在抽取...';
+    statusSpan.textContent = '正在从本地提取数据...';
+
+    try {
+      const params = new URLSearchParams({ name: groupName, limit: 500 });
+      if (selectedStartDate) params.set('startDate', selectedStartDate);
+      const res = await fetch(`/api/wechat-history?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '提取失败');
+
+      if (!data.data?.trim()) {
+        statusSpan.textContent = '⚠️ 未找到聊天记录。';
+      } else {
+        chatLogInput.value = data.data;
+        const lines = data.data.split('\n').filter(l => l.trim()).length;
+        statusSpan.textContent = `✅ 已载入 ${lines} 条消息到缓冲区`;
+      }
+    } catch (err) {
+      statusSpan.textContent = `❌ ${err.message}`;
+    } finally {
+      extractBtn.disabled = false;
+      extractBtn.textContent = '⚡️ 一键提取到缓冲区';
+    }
+  });
+
+  // ── Step 3: AI Scan button (Buffer only) ───────────────────────────────
+  document.getElementById('btn-scan-radar').addEventListener('click', () => {
+    performFullScan(selectedGroup, selectedStartDate, 'manual');
   });
 
   // ── Export: latest scan ────────────────────────────────────────────────

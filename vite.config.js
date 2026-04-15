@@ -4,7 +4,7 @@ import util from 'util';
 
 const execPromise = util.promisify(exec);
 
-const WECHAT_CMD = `echo "1" | PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" npx --yes @canghe_ai/wechat-cli`;
+const WECHAT_CMD = `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" && echo "1" | npx --yes @canghe_ai/wechat-cli`;
 const EXEC_OPTS = { maxBuffer: 1024 * 1024 * 10 }; // 10MB
 
 export default defineConfig({
@@ -70,19 +70,29 @@ export default defineConfig({
             console.log(`[Radar] history: "${chatName}" limit=${limit} start=${startDate || 'none'}`);
 
             const command = `${WECHAT_CMD} history "${chatName}" --limit ${limit} --format text${startFlag}`;
-            const { stdout } = await execPromise(command, EXEC_OPTS);
-
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ data: stdout }));
+            try {
+              const { stdout, stderr } = await execPromise(command, EXEC_OPTS);
+              if (stderr && stderr.includes('Error')) {
+                 console.warn('[Radar] CLI Warning/Error:', stderr);
+              }
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ data: stdout }));
+            } catch (execError) {
+              console.error('[Radar] History Exec Error:', execError);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                error: '底层执行失败。请确认已运行 sudo wechat-cli init 完成授权。',
+                details: execError.message,
+                stderr: execError.stderr
+              }));
+            }
           } catch (error) {
-            console.error('[Radar] History Error:', error.message);
+            console.error('[Radar] History Middleware Error:', error.message);
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({
-              error: '底层执行失败。请确认已运行 sudo wechat-cli init 完成授权。',
-              details: error.message
-            }));
+            res.end(JSON.stringify({ error: error.message }));
           }
         });
 
