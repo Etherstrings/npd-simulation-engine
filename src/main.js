@@ -317,26 +317,7 @@ function renderTargetPool() {
       `;
       
       const importBtn = uCard.querySelector('.btn-pool-import');
-      importBtn.addEventListener('click', () => {
-        document.querySelector('[data-view="view-setup"]').click();
-        document.getElementById('agent-a-name').value = u.username;
-        const basicBg = document.getElementById('agent-a-background');
-        if (basicBg) {
-          basicBg.value = `从本地档案库【${groupName}】中调取的危险分子。\n典型特征：${u.disorder_type}\n核心言论："${u.evidence}"`;
-        }
-        document.getElementById('agent-a-wound').value = u.core_wound_guess;
-        document.getElementById('agent-a-grandiosity').value = 95;
-        document.getElementById('agent-a-vulnerability').value = 90;
-        document.getElementById('agent-a-admiration').value = 85;
-        document.getElementById('agent-a-rivalry').value = 95;
-        document.getElementById('agent-a-empathy').value = 5;
-        document.getElementById('agent-a-rage').value = 15;
-        ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(trait => {
-          const el = document.getElementById(`agent-a-${trait}`);
-          if(el) el.dispatchEvent(new Event('input'));
-        });
-        alert(`档案已载入！准备对线：${u.username}`);
-      });
+      importBtn.addEventListener('click', () => importTargetToSim(u, groupName));
       
       usersList.appendChild(uCard);
     });
@@ -346,173 +327,318 @@ function renderTargetPool() {
   });
 }
 
+// ── Trait initializer based on disorder type ─────────────────────────────
+function getTraitsFromDisorder(disorderType) {
+  const t = (disorderType || '').toLowerCase();
+  if (t.includes('夸大') || t.includes('grandiose')) {
+    return { grandiosity: 95, vulnerability: 35, admiration: 90, rivalry: 92, empathy: 5, rage: 22 };
+  } else if (t.includes('脆弱') || t.includes('vulnerable')) {
+    return { grandiosity: 55, vulnerability: 95, admiration: 88, rivalry: 58, empathy: 15, rage: 18 };
+  } else if (t.includes('hpd') || t.includes('表演') || t.includes('histrionic')) {
+    return { grandiosity: 72, vulnerability: 80, admiration: 95, rivalry: 45, empathy: 28, rage: 30 };
+  } else if (t.includes('混合') || t.includes('mixed')) {
+    return { grandiosity: 80, vulnerability: 78, admiration: 88, rivalry: 78, empathy: 10, rage: 20 };
+  }
+  // Default NPD profile
+  return { grandiosity: 88, vulnerability: 68, admiration: 85, rivalry: 82, empathy: 8, rage: 20 };
+}
+
+// ── Download helpers ──────────────────────────────────────────────────────
+function buildExportProfile(u, groupName) {
+  const traits = getTraitsFromDisorder(u.disorder_type);
+  return {
+    group:          groupName,
+    username:       u.username,
+    disorder_type:  u.disorder_type,
+    evidence:       u.evidence,
+    core_wound:     u.core_wound_guess,
+    initial_traits: traits,
+    scanned_at:     new Date().toISOString(),
+  };
+}
+
+function downloadJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Import a target into the simulation setup panel ───────────────────────
+function importTargetToSim(u, groupName) {
+  document.querySelector('[data-view="view-setup"]').click();
+  document.getElementById('agent-a-name').value = u.username;
+  const basicBg = document.getElementById('agent-a-background');
+  if (basicBg) {
+    basicBg.value = `来源群组：【${groupName}】\n人格诊断：${u.disorder_type}\n典型言论："${u.evidence}"`;
+  }
+  document.getElementById('agent-a-wound').value = u.core_wound_guess;
+
+  const traits = getTraitsFromDisorder(u.disorder_type);
+  document.getElementById('agent-a-grandiosity').value = traits.grandiosity;
+  document.getElementById('agent-a-vulnerability').value = traits.vulnerability;
+  document.getElementById('agent-a-admiration').value = traits.admiration;
+  document.getElementById('agent-a-rivalry').value = traits.rivalry;
+  document.getElementById('agent-a-empathy').value = traits.empathy;
+  document.getElementById('agent-a-rage').value = traits.rage;
+
+  ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(tr => {
+    const el = document.getElementById(`agent-a-${tr}`);
+    if (el) el.dispatchEvent(new Event('input'));
+  });
+  alert(`✅ 已将【${u.username}】(${u.disorder_type}) 的特征档案装填至引擎，可直接启动对线模拟。`);
+}
+
 // ============================================
 // Radar / Find Poseur Mode
 // ============================================
 function initRadar() {
-  const btn = document.getElementById('btn-scan-radar');
-  if(!btn) return;
-  
-  // Init pool UI
+  if (!document.getElementById('btn-scan-radar')) return;
+
+  // ── State ──────────────────────────────────────────────────────────────
+  let selectedGroup = null;     // string - chosen group name
+  let selectedStartDate = null; // string "YYYY-MM-DD" or null
+  let lastScanResults = [];     // array of NPD objects from latest scan
+  let lastScanGroup = null;     // group name of latest scan
+
+  // ── Init Pool ──────────────────────────────────────────────────────────
   renderTargetPool();
-  
-  // Clear pool logic
-  const btnClearPool = document.getElementById('btn-clear-pool');
-  if(btnClearPool) {
-    btnClearPool.addEventListener('click', () => {
-      if(confirm('确定要清空所有已保存的 NPD 嫌疑人本地档案吗？此操作无法恢复。')) {
-        localStorage.removeItem(POOL_STORAGE_KEY);
-        renderTargetPool();
-      }
-    });
+
+  // ── Step visibility helpers ────────────────────────────────────────────
+  function revealStep(stepId) {
+    document.getElementById(stepId)?.classList.remove('hidden');
   }
-  
-  const chatLogInput = document.getElementById('chat-log-input');
-  const statusSpan = document.getElementById('radar-status');
 
-  // Auto Extract Logic (wechat-cli)
-  const btnAutoExtract = document.getElementById('btn-auto-extract');
-  const inputTargetName = document.getElementById('wechat-target-name');
-  const selectTargetLimit = document.getElementById('wechat-target-limit');
+  // ── Step 1: Fetch sessions and render chips ────────────────────────────
+  document.getElementById('btn-fetch-sessions').addEventListener('click', async () => {
+    const loading = document.getElementById('sessions-loading');
+    const list = document.getElementById('sessions-list');
+    loading.classList.remove('hidden');
+    list.innerHTML = '';
+    try {
+      const res = await fetch('/api/wechat-sessions');
+      const data = await res.json();
+      loading.classList.add('hidden');
 
-  if(btnAutoExtract) {
-    btnAutoExtract.addEventListener('click', async () => {
-      const targetName = inputTargetName.value.trim();
-      const targetLimit = selectTargetLimit.value;
-
-      if (!targetName) {
-        statusSpan.textContent = "⚠️ 请先写上你要查的群名或者人名！";
+      const sessions = data.sessions || [];
+      if (!sessions.length) {
+        list.innerHTML = '<span style="color:#888">未找到会话列表。请确认 wechat-cli init 已完成。</span>';
         return;
       }
 
-      btnAutoExtract.disabled = true;
-      btnAutoExtract.textContent = "⏳ 正在突破底层数据库...";
-      statusSpan.textContent = "正在调用 wechat-cli 从本机抽取...";
-      chatLogInput.value = "";
+      sessions.forEach(s => {
+        const name = s.name || s.nickname || s.chat_name || JSON.stringify(s);
+        if (!name || name.length < 1) return;
 
-      try {
-        const response = await fetch(`/api/wechat-history?name=${encodeURIComponent(targetName)}&limit=${targetLimit}`);
-        const result = await response.json();
+        const chip = document.createElement('button');
+        chip.className = 'btn btn-sm btn-ghost';
+        chip.style.cssText = 'border: 1px solid #444; border-radius: 20px; padding: 0.3rem 0.9rem; font-size: 0.85rem; cursor: pointer; transition: all 0.15s;';
+        chip.textContent = name;
 
-        if (!response.ok) {
-          throw new Error(result.error || result.details || "未知抽取错误");
-        }
+        chip.addEventListener('click', () => {
+          // Clear previous selection
+          list.querySelectorAll('button').forEach(b => {
+            b.style.borderColor = '#444';
+            b.style.background = '';
+            b.style.color = '';
+          });
+          // Highlight selected
+          chip.style.borderColor = '#ff3366';
+          chip.style.background = 'rgba(255,51,102,0.15)';
+          chip.style.color = '#ff3366';
 
-        if (!result.data || result.data.trim() === '') {
-          statusSpan.textContent = `⚠️ 未找到名为 [${targetName}] 的聊天记录，请检查名称是否完全匹配。`;
-        } else {
-          chatLogInput.value = result.data;
-          statusSpan.textContent = `✅ 自动获取成功！(查获 ${result.data.split('\n').length} 行数据)`;
-        }
-      } catch (err) {
-        alert(
-          "🚨 底层提取失败！\n\n" +
-          "系统必须要借助 wechat-cli 才能阅读被加密的信源。\n" +
-          "请打开你的电脑终端 (Terminal) 执行以下两段命令：\n\n" +
-          "1. npm i -g @canghe_ai/wechat-cli\n" +
-          "2. sudo wechat-cli init\n\n" +
-          "按提示授权盘符读取后，刷新本页面再试一次！\n\n错误信息：" + err.message
-        );
-        statusSpan.textContent = `❌ 提取失败：${err.message}`;
-      } finally {
-        btnAutoExtract.disabled = false;
-        btnAutoExtract.textContent = "⚡️ 一键提取并拉取";
-      }
+          selectedGroup = name;
+          document.getElementById('selected-group-name').textContent = name;
+          document.getElementById('selected-group-badge').classList.remove('hidden');
+
+          // Reveal step 2
+          revealStep('radar-step-2');
+        });
+
+        list.appendChild(chip);
+      });
+    } catch (err) {
+      loading.classList.add('hidden');
+      list.innerHTML = `<span style="color:#ff3366">获取失败：${err.message}</span>`;
+    }
+  });
+
+  // ── Step 2: Time range quick buttons ──────────────────────────────────
+  document.querySelectorAll('.btn-time-range').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-time-range').forEach(b => {
+        b.style.borderColor = '';
+        b.style.color = '';
+        b.style.background = '';
+      });
+      btn.style.borderColor = '#00d0ff';
+      btn.style.color = '#00d0ff';
+      btn.style.background = 'rgba(0,208,255,0.1)';
+
+      const days = parseInt(btn.dataset.days);
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      selectedStartDate = d.toISOString().slice(0, 10);
+      document.getElementById('radar-start-date').value = selectedStartDate;
+      document.getElementById('selected-range-badge').textContent = `📅 将读取 ${selectedStartDate} 起的记录`;
+
+      revealStep('radar-step-3');
     });
-  }
+  });
 
-  // Clipboard Button
-  const btnClipboard = document.getElementById('btn-clipboard');
-  if(btnClipboard) {
-    btnClipboard.addEventListener('click', async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if(text) {
-          chatLogInput.value = text;
-          statusSpan.textContent = '✅ 已成功吸附剪贴板聊天记录';
-        } else {
-          statusSpan.textContent = '⚠️ 剪贴板为空或不是文本';
-        }
-      } catch (err) {
-        statusSpan.textContent = '❌ 无法读取剪贴板，请允许浏览器权限或手动粘贴';
-      }
-    });
-  }
+  document.getElementById('radar-start-date').addEventListener('change', (e) => {
+    if (e.target.value) {
+      selectedStartDate = e.target.value;
+      document.getElementById('selected-range-badge').textContent = `📅 将读取 ${selectedStartDate} 起的记录`;
+      revealStep('radar-step-3');
+    }
+  });
 
-
-  btn.addEventListener('click', async () => {
-    const text = document.getElementById('chat-log-input').value.trim();
-    if (!text) return;
-    
-    // Check API
-    const settings = loadSettings();
-    if (!settings?.apiKey) {
-      showSettings();
+  // ── Step 3: Extract button ─────────────────────────────────────────────
+  document.getElementById('btn-auto-extract').addEventListener('click', async () => {
+    const groupName = selectedGroup;
+    if (!groupName) {
+      alert('请先在第①步选择一个群聊。');
       return;
     }
-    
-    document.getElementById('radar-status').textContent = '扫描中，请稍候...';
-    document.getElementById('btn-scan-radar').disabled = true;
-    
+    const statusSpan = document.getElementById('radar-status');
+    const chatLogInput = document.getElementById('chat-log-input');
+    const extractBtn = document.getElementById('btn-auto-extract');
+
+    extractBtn.disabled = true;
+    extractBtn.textContent = '⏳ 正在抽取...';
+    statusSpan.textContent = '正在调用 wechat-cli...';
+    chatLogInput.value = '';
+
     try {
-      const prompt = buildScannerPrompt();
-      const history = [{ role: 'user', content: text }];
-      const resultRaw = await callLLM(prompt, history);
-      
-      let jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0];
-      if (!jsonStr) {
-        // Fallback: try parsing the whole thing if it's already a valid array without extra spaces
-        jsonStr = resultRaw;
+      const params = new URLSearchParams({ name: groupName, limit: 500 });
+      if (selectedStartDate) params.set('startDate', selectedStartDate);
+
+      const res = await fetch(`/api/wechat-history?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.details || '提取失败');
+
+      if (!data.data?.trim()) {
+        statusSpan.textContent = '⚠️ 未找到聊天记录，请检查群名是否完全匹配。';
+      } else {
+        chatLogInput.value = data.data;
+        const lines = data.data.split('\n').filter(l => l.trim()).length;
+        statusSpan.textContent = `✅ 成功获取 ${lines} 条消息`;
       }
-      
+    } catch (err) {
+      statusSpan.textContent = `❌ ${err.message}`;
+    } finally {
+      extractBtn.disabled = false;
+      extractBtn.textContent = '⚡️ 一键提取聊天记录';
+    }
+  });
+
+  // ── Step 3: AI Scan button ─────────────────────────────────────────────
+  document.getElementById('btn-scan-radar').addEventListener('click', async () => {
+    const text = document.getElementById('chat-log-input').value.trim();
+    if (!text) { alert('数据缓冲区为空，请先提取或粘贴聊天记录。'); return; }
+
+    const settings = loadSettings();
+    if (!settings?.apiKey) { showSettings(); return; }
+
+    const statusSpan = document.getElementById('radar-status');
+    statusSpan.textContent = '🧿 AI 扫描中，请稍候...';
+    document.getElementById('btn-scan-radar').disabled = true;
+
+    try {
+      const resultRaw = await callLLM(buildScannerPrompt(), [{ role: 'user', content: text }]);
+
+      // Robust JSON extraction
       let scannedUsers = [];
+      const jsonStr = resultRaw.match(/\[[\s\S]*\]/)?.[0];
       try {
-        scannedUsers = JSON.parse(jsonStr);
-      } catch (e) {
-        // Second fallback: Maybe the LLM returned markdown codeblocks?
-        try {
-          const stripped = resultRaw.replace(/```json/g, '').replace(/```/g, '').trim();
-          const match = stripped.match(/\[[\s\S]*\]/);
-          scannedUsers = JSON.parse(match ? match[0] : stripped);
-        } catch (e2) {
-          throw new Error('解析失败。大模型没有严格通过 JSON 数组返回结果。内容: ' + resultRaw.substring(0, 50));
-        }
+        scannedUsers = JSON.parse(jsonStr || resultRaw);
+      } catch {
+        const stripped = resultRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+        const match = stripped.match(/\[[\s\S]*\]/);
+        try { scannedUsers = JSON.parse(match ? match[0] : stripped); } catch { scannedUsers = []; }
       }
-      
-      document.getElementById('radar-status').textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
-      
-      // Attempt to find the group name used for this scan
-      const groupNameInput = document.getElementById('radar-wechat-target');
-      const groupName = groupNameInput ? groupNameInput.value : '最近导入的数据';
-      
-      // Save valid findings to local pool
-      if (scannedUsers.length > 0) {
-        saveToTargetPool(groupName, scannedUsers);
-      }
-      
-      renderRadarResults(scannedUsers);
-    } catch (e) {
-      document.getElementById('radar-status').textContent = `错误: ${e.message}`;
+
+      statusSpan.textContent = `扫描完成！发现 ${scannedUsers.length} 位疑似目标。`;
+
+      const groupName = selectedGroup || '未知来源';
+      lastScanResults = scannedUsers;
+      lastScanGroup = groupName;
+
+      if (scannedUsers.length > 0) saveToTargetPool(groupName, scannedUsers);
+
+      renderRadarResults(scannedUsers, groupName);
+
+      const exportBtn = document.getElementById('btn-export-scan');
+      if (exportBtn) exportBtn.classList.remove('hidden');
+
+    } catch (err) {
+      statusSpan.textContent = `❌ 错误: ${err.message}`;
     } finally {
       document.getElementById('btn-scan-radar').disabled = false;
     }
   });
+
+  // ── Export: latest scan ────────────────────────────────────────────────
+  document.getElementById('btn-export-scan')?.addEventListener('click', () => {
+    if (!lastScanResults.length) return;
+    const payload = {
+      type: 'npd_radar_scan',
+      group: lastScanGroup,
+      exported_at: new Date().toISOString(),
+      targets: lastScanResults.map(u => buildExportProfile(u, lastScanGroup)),
+    };
+    downloadJSON(payload, `npd_scan_${lastScanGroup}_${Date.now()}.json`);
+  });
+
+  // ── Export: full pool ──────────────────────────────────────────────────
+  document.getElementById('btn-export-pool')?.addEventListener('click', () => {
+    const pool = getTargetPool();
+    if (!Object.keys(pool).length) { alert('档案库为空，暂无可导出的数据。'); return; }
+    const payload = {
+      type: 'npd_target_pool',
+      exported_at: new Date().toISOString(),
+      groups: Object.entries(pool).map(([gn, users]) => ({
+        group: gn,
+        targets: users.map(u => buildExportProfile(u, gn)),
+      })),
+    };
+    downloadJSON(payload, `npd_pool_${Date.now()}.json`);
+  });
+
+  // ── Clear pool ─────────────────────────────────────────────────────────
+  document.getElementById('btn-clear-pool')?.addEventListener('click', () => {
+    if (confirm('确定要清空所有本地档案吗？此操作无法恢复。')) {
+      localStorage.removeItem(POOL_STORAGE_KEY);
+      renderTargetPool();
+    }
+  });
 }
 
-function renderRadarResults(users) {
+// ============================================
+// Render Radar Results
+// ============================================
+function renderRadarResults(users, groupName = '未知来源') {
   const container = document.getElementById('radar-results');
-  container.innerHTML = '';
-  
+  const existingCards = container.querySelectorAll('.radar-target-card, .radar-empty');
+  existingCards.forEach(el => el.remove());
+
   if (users.length === 0) {
-    container.innerHTML = '<div style="color:#aaa; text-align:center; padding: 2rem;">没有在样本中扫描出明显的 Cluster-B 毒性人格。你可以尝试上传更具争议性的聊天记录。</div>';
+    const empty = document.createElement('div');
+    empty.className = 'radar-empty';
+    empty.style.cssText = 'color:#aaa; text-align:center; padding: 2rem;';
+    empty.textContent = '没有扫描出明显的 Cluster-B 毒性人格。可尝试扩大时间范围或换一个群。';
+    container.appendChild(empty);
     return;
   }
-  
+
   users.forEach((u, index) => {
     const card = document.createElement('div');
     card.className = 'radar-target-card';
     card.style.cssText = 'background: #1a1a2e; border: 1px solid #ff3366; border-radius: 8px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;';
-    
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div>
@@ -520,8 +646,8 @@ function renderRadarResults(users) {
           <span class="tag tag-npd">${escapeHTML(u.disorder_type)}</span>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-          <button class="btn btn-sm btn-secondary btn-import-sim" data-idx="${index}">⚔️ 导入主推演引擎</button>
-          <button class="btn btn-sm btn-danger btn-generate-critique" data-idx="${index}">🔪 生成致命锐评</button>
+          <button class="btn btn-sm btn-secondary btn-import-sim">⚔️ 导入推演引擎</button>
+          <button class="btn btn-sm btn-danger btn-generate-critique">🔪 生成致命锐评</button>
         </div>
       </div>
       <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 6px; border-left: 3px solid #ff3366;">
@@ -540,28 +666,26 @@ function renderRadarResults(users) {
         <textarea class="critique-text" rows="4" style="width: 100%; background: #12121a; color: #fff; border: 1px solid #666; padding: 0.8rem; border-radius: 4px;" readonly></textarea>
       </div>
     `;
-    
+
     container.appendChild(card);
-    
+
     const generateBtn = card.querySelector('.btn-generate-critique');
-    const outputArea = card.querySelector('.critique-output');
-    const textArea = card.querySelector('.critique-text');
-    const copyBtn = card.querySelector('.btn-copy');
-    
+    const outputArea  = card.querySelector('.critique-output');
+    const textArea    = card.querySelector('.critique-text');
+    const copyBtn     = card.querySelector('.btn-copy');
+
     generateBtn.addEventListener('click', async () => {
       generateBtn.disabled = true;
       generateBtn.textContent = '生成中...';
       try {
-        const prompt = buildCritiquePrompt(u);
-        const resultRaw = await callLLM(prompt, []); // No history needed for single shot
-        
-        // Remove reasoning block if present (<think>...</think>)
+        const resultRaw = await callLLM(buildCritiquePrompt(u), []);
         let finalOutput = resultRaw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-        
-        if (!finalOutput || finalOutput.length < 5 || finalOutput.includes("I cannot fulfill") || finalOutput.includes("As an AI") || finalOutput.includes("作为人工智能")) {
+        if (!finalOutput || finalOutput.length < 5 ||
+            finalOutput.includes('I cannot fulfill') ||
+            finalOutput.includes('As an AI') ||
+            finalOutput.includes('作为人工智能')) {
           finalOutput = `[系统拦截提示]：由于目标的安全策略，大语言模型拒绝生成激烈的攻击性回复。\n\n[灰石法则 (Grey Rock) 替代话术推荐]：\n“哦，你说的确实有些道理，但我现在不太关心这个。先这样吧。”\n(这种毫不关心、没有情绪波动的回复，是对剥夺 NPD 供血最致命的武器。)`;
         }
-
         outputArea.classList.remove('hidden');
         textArea.value = finalOutput;
       } catch (e) {
@@ -575,34 +699,33 @@ function renderRadarResults(users) {
 
     const importBtn = card.querySelector('.btn-import-sim');
     importBtn.addEventListener('click', () => {
-      // 1. Switch back to setup panel by simulating a click
+      // 1. Switch back to setup panel
       document.querySelector('[data-view="view-setup"]').click();
-      
+
       // 2. Override all setup variables with the extracted user
       document.getElementById('agent-a-name').value = u.username;
-      
+
       const basicBg = document.getElementById('agent-a-background');
       if (basicBg) {
-        basicBg.value = `系统雷达拦截的目标：${u.disorder_type}的疑似患者。
-曾在群组中发布具有毒性特征的言论："${u.evidence}"`;
+        basicBg.value = `系统雷达拦截的目标：${u.disorder_type}的疑似患者。\n曾在群组中发布具有毒性特征的言论："${u.evidence}"`;
       }
-      
+
       document.getElementById('agent-a-wound').value = u.core_wound_guess;
-      
-      // Auto-set the character stats to an extremely aggressive "toxic" profile since they were caught.
-      document.getElementById('agent-a-grandiosity').value = 95;
-      document.getElementById('agent-a-vulnerability').value = 90;
-      document.getElementById('agent-a-admiration').value = 85;
-      document.getElementById('agent-a-rivalry').value = 95;
-      document.getElementById('agent-a-empathy').value = 5;
-      document.getElementById('agent-a-rage').value = 15;
-      
+
+      const traits = getTraitsFromDisorder(u.disorder_type);
+      document.getElementById('agent-a-grandiosity').value = traits.grandiosity;
+      document.getElementById('agent-a-vulnerability').value = traits.vulnerability;
+      document.getElementById('agent-a-admiration').value = traits.admiration;
+      document.getElementById('agent-a-rivalry').value = traits.rivalry;
+      document.getElementById('agent-a-empathy').value = traits.empathy;
+      document.getElementById('agent-a-rage').value = traits.rage;
+
       // Trigger update hooks
-      ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(trait => {
-        const el = document.getElementById(`agent-a-${trait}`);
+      ['grandiosity', 'vulnerability', 'admiration', 'rivalry', 'empathy', 'rage'].forEach(tr => {
+        const el = document.getElementById(`agent-a-${tr}`);
         if(el) el.dispatchEvent(new Event('input'));
       });
-      
+
       alert(`已成功将【${u.username}】作为核心反派引入“NPD 核心对抗引擎”。你可以调整下方的对抗强度，并点击[启动模拟]亲自下场对线！`);
     });
     

@@ -351,61 +351,72 @@
         <div class="radar-container" style="max-width: 1000px; margin: 0 auto; padding: 2rem;">
           <div class="setup-header" style="margin-bottom: 2rem;">
             <h2>🕵️‍♂️ 群聊病患雷达</h2>
-            <p class="subtitle">将群聊记录（微信、QQ等）粘贴在下方，引擎将扫描并提取出具有 NPD/HPD 等毒性特征的危险分子，并提供破防话术支持。</p>
+            <p class="subtitle">引擎将自动扫描你的微信群聊，提取具有 NPD/HPD 等毒性特征的危险分子，并生成对抗话术与人格档案。</p>
           </div>
-          
-          <div class="radar-upload-dashboard" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem;">
-            
-            <div class="guide-panel" style="background: rgba(0, 208, 255, 0.05); border-left: 4px solid #00d0ff; padding: 1rem 1.5rem; border-radius: 4px;">
-              <h3 style="color: #00d0ff; margin-top: 0;">⚡️ 底层全自动接入启动</h3>
-              <p style="font-size: 0.9rem; color: #ccc; margin-bottom: 0.5rem;">本功能现已接入 <code>wechat-cli</code> 底层中转引擎，无需手动查找和上传文件！</p>
-              <p style="font-size: 0.85rem; color: #aaa; margin: 0;"><strong>⚠️ 初次使用注意事项：</strong>请确保您已在计算机终端执行过 <code>npm i -g @canghe_ai/wechat-cli</code> 并且运行过一次 <code>sudo wechat-cli init</code> 授权数据库访问。</p>
-            </div>
 
-            <div class="upload-panel" style="display: flex; gap: 1rem; align-items: flex-end; background: #12121a; padding: 1.5rem; border-radius: 8px; border: 1px solid #333;">
-              <div style="flex: 3;">
-                <label for="wechat-target-name" style="color: #fff; display: block; margin-bottom: 0.5rem; font-weight: bold;">🎯 目标定位 (群名或人名)</label>
-                <input type="text" id="wechat-target-name" style="width: 100%; padding: 1rem; background: #000; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 1.1rem;" placeholder="例如：相亲相爱一家人">
-              </div>
-              <div style="flex: 1;">
-                <label for="wechat-target-limit" style="color: #888; display: block; margin-bottom: 0.5rem;">获取最近的消息数</label>
-                <select id="wechat-target-limit" style="width: 100%; padding: 1rem; background: #000; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 1rem;">
-                  <option value="100">100 条</option>
-                  <option value="300" selected>300 条</option>
-                  <option value="800">800 条</option>
-                  <option value="2000">2000 条</option>
-                </select>
-              </div>
-              <div style="flex: 1;">
-                <button id="btn-auto-extract" class="btn btn-primary" style="width: 100%; height: 3.5rem; font-size: 1rem;">⚡️ 一键提取并拉取</button>
-              </div>
+          <!-- Step 1: Scan & pick group -->
+          <div class="radar-step-card" id="radar-step-1" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="margin: 0; color: #00d0ff;">① 选择目标群聊</h3>
+              <button id="btn-fetch-sessions" class="btn btn-secondary">📡 扫描我的群聊</button>
             </div>
-
-            <div class="preview-panel">
-              <label for="chat-log-input" style="font-size: 0.85rem; color: #888; display: block; margin-bottom: 0.5rem;">将载入数据缓冲区 (可进行最终修饰)</label>
-              <textarea id="chat-log-input" rows="8" style="font-family: 'JetBrains Mono', monospace; background: #12121a; color: #a1a1b5; border: 1px solid #2a2a45; border-radius: 8px; padding: 1rem; width: 100%; resize: vertical;" placeholder="文件装载后将在此处显示预览... 您也可以直接在这里手动打字。"></textarea>
+            <div id="sessions-loading" class="hidden" style="color: #888; font-size: 0.9rem; padding: 0.5rem 0;">正在读取会话列表…</div>
+            <div id="sessions-list" style="display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 2.5rem;">
+              <span style="color: #555; font-size: 0.9rem; align-self: center;">点击上方按钮加载你的微信群聊列表。</span>
             </div>
-
-            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 1rem;">
-              <span id="radar-status" style="color: #ff3366; font-size: 0.95rem; font-weight: bold;"></span>
-              <button id="btn-scan-radar" class="btn btn-primary btn-large">🧿 发送数据并扫描病患</button>
+            <div id="selected-group-badge" class="hidden" style="margin-top: 1rem; padding: 0.6rem 1rem; background: rgba(255,51,102,0.12); border: 1px solid #ff3366; border-radius: 8px; color: #ff3366; font-weight: bold;">
+              🎯 已选择：<span id="selected-group-name"></span>
             </div>
           </div>
 
+          <!-- Step 2: Time range -->
+          <div id="radar-step-2" class="hidden" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 1.5rem;">
+            <h3 style="margin: 0 0 1rem 0; color: #00d0ff;">② 选择分析时间范围</h3>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+              <button class="btn btn-sm btn-ghost btn-time-range" data-days="3">📅 近 3 天</button>
+              <button class="btn btn-sm btn-ghost btn-time-range" data-days="7">📅 近 7 天</button>
+              <button class="btn btn-sm btn-ghost btn-time-range" data-days="30">📅 近 30 天</button>
+              <span style="color: #555; font-size: 0.85rem; margin-left: 0.5rem;">或自定义起始日期：</span>
+              <input type="date" id="radar-start-date" style="background: #12121a; border: 1px solid #444; border-radius: 6px; color: #fff; padding: 0.35rem 0.7rem; font-size: 0.9rem;">
+            </div>
+            <div id="selected-range-badge" style="margin-top: 0.75rem; font-size: 0.85rem; color: #888;">请选择时间范围，或不选（读取最近消息）</div>
+          </div>
+
+          <!-- Step 3: Extract + Scan -->
+          <div id="radar-step-3" class="hidden" style="background: #1a1a2e; padding: 1.5rem; border-radius: 12px; border: 1px solid #2a2a45; margin-bottom: 1.5rem;">
+            <h3 style="margin: 0 0 1rem 0; color: #00d0ff;">③ 提取记录并扫描病患</h3>
+            <label style="font-size: 0.85rem; color: #888; display: block; margin-bottom: 0.5rem;">数据缓冲区（可手动编辑）</label>
+            <textarea id="chat-log-input" rows="8" style="font-family: 'JetBrains Mono', monospace; background: #12121a; color: #a1a1b5; border: 1px solid #2a2a45; border-radius: 8px; padding: 1rem; width: 100%; resize: vertical;" placeholder="点击"一键提取"加载聊天记录…也可在此直接粘贴文本。"></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; gap: 1rem; flex-wrap: wrap;">
+              <button id="btn-auto-extract" class="btn btn-secondary">⚡️ 一键提取聊天记录</button>
+              <div style="display: flex; align-items: center; gap: 1rem;">
+                <span id="radar-status" style="color: #ff3366; font-size: 0.9rem; font-weight: bold;"></span>
+                <button id="btn-scan-radar" class="btn btn-primary btn-large">🧿 AI 扫描病患</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Target Pool -->
           <div class="target-pool-section" style="margin-bottom: 2rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2a45; padding-bottom: 0.5rem; margin-bottom: 1rem;">
               <h2 style="margin: 0; font-size: 1.2rem; color: #fff;">🗃️ 嫌疑人档案库 (Target Pool)</h2>
-              <button id="btn-clear-pool" class="btn btn-sm btn-ghost" style="color: #666;">清空本地档案</button>
+              <div style="display: flex; gap: 0.75rem;">
+                <button id="btn-export-pool" class="btn btn-sm btn-secondary">📤 导出全部档案</button>
+                <button id="btn-clear-pool" class="btn btn-sm btn-ghost" style="color: #666;">清空本地档案</button>
+              </div>
             </div>
             <div id="target-pool-results" style="display: flex; flex-direction: column; gap: 1rem;">
-              <!-- Grouped Radar targets will be loaded here from localStorage -->
-              <div style="color: #666; font-size: 0.9rem; font-style: italic;">档案库空空如也。请在上方输入群组进行提取，截获的患者将被永久钉在这里。</div>
+              <div style="color: #666; font-size: 0.9rem; font-style: italic;">档案库空空如也。扫描群聊后，截获的患者将被永久保存在这里。</div>
             </div>
           </div>
 
+          <!-- Latest scan results -->
           <div class="radar-results-section" id="radar-results" style="display: flex; flex-direction: column; gap: 1.5rem; padding-top: 2rem; border-top: 2px dashed #2a2a45;">
-            <h3 style="margin-top: 0; color: #00d0ff;">✨ 最新扫描结果</h3>
-            <!-- Radar cards will be populated here -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="margin: 0; color: #00d0ff;">✨ 最新扫描结果</h3>
+              <button id="btn-export-scan" class="btn btn-sm btn-secondary hidden">📤 导出本次扫描</button>
+            </div>
+            <!-- Radar cards injected by JS -->
           </div>
         </div>
       </section>
