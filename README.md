@@ -1,8 +1,30 @@
 # NPD Simulation Engine v2.0
 
+<div align="center">
+
+**把人格操控、对抗策略和真实语言交锋做成一个可以亲手下场的仿真战场。**
+
+![Vite](https://img.shields.io/badge/Vite-Frontend-646CFF?style=flat-square&logo=vite&logoColor=white)
+![LLM](https://img.shields.io/badge/LLM-Adversarial_Simulation-7C3AED?style=flat-square)
+![Research](https://img.shields.io/badge/Use-Research-1D4ED8?style=flat-square)
+![Human In Loop](https://img.shields.io/badge/Mode-Human_in_the_Loop-0F766E?style=flat-square)
+![Radar](https://img.shields.io/badge/Feature-Cluster_B_Radar-C62828?style=flat-square)
+
+NARC 状态建模 · 双边 Agent 对抗 · 人类下场 · 群聊雷达扫描
+
+<img src="src/assets/hero.png" alt="NPD Simulation Engine interface preview" width="900" />
+
+</div>
+
 NPD 对抗模拟引擎是一个基于纯前端技术栈结合大语言模型（LLM）的**临床级自恋型人格障碍（NPD）对抗互动研究工具**。
 
 该工具脱离了传统的选择题模拟，实现了支持**全自然语言对话**、**动态情绪状态追踪**和**人类真实互动打分**的多主体仿真实验场。
+
+## <a id="donate"></a>赞助支持
+
+如果这个项目对你的研究、训练或演练有帮助，欢迎通过 GitHub Sponsors 支持后续维护：
+
+- GitHub Sponsors: https://github.com/sponsors/Etherstrings
 
 ## ✨ 核心特性 
 
